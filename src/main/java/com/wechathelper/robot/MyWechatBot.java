@@ -2,14 +2,8 @@ package com.wechathelper.robot;
 
 import com.alibaba.fastjson.JSON;
 import com.wechathelper.WechathelperApplication;
-import com.wechathelper.model.AutoReplyMessage;
-import com.wechathelper.model.ChatMessage;
-import com.wechathelper.model.TextMessageTask;
-import com.wechathelper.model.User;
-import com.wechathelper.repository.AutoReplyTextRepository;
-import com.wechathelper.repository.ChatMessageRepository;
-import com.wechathelper.repository.TextMessageTaskRepository;
-import com.wechathelper.repository.UserRepository;
+import com.wechathelper.model.*;
+import com.wechathelper.repository.*;
 import io.github.biezhi.wechat.WeChatBot;
 import io.github.biezhi.wechat.api.annotation.Bind;
 import io.github.biezhi.wechat.api.constant.Config;
@@ -23,7 +17,6 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -45,6 +38,9 @@ public class MyWechatBot extends WeChatBot{
 
 	@Autowired
 	private ChatMessageRepository chatMessageRepository;
+
+	@Autowired
+	private AutoReplyToUserRepository autoReplyToUserRepository;
 
 	private AutoReplyMessage autoReplyMessage;
 
@@ -92,11 +88,15 @@ public class MyWechatBot extends WeChatBot{
 		);
 		chatMessageRepository.save(chatMessage);
 
-	    if(StringUtils.isNotEmpty(message.getName())  && auto_reply ){
+		AutoReplyToUser autoReplyToUser = autoReplyToUserRepository.findByWechatIdAndAndReplyToWechatId(this.session().getUserName(),message.getFromUserName());
+
+		if (StringUtils.isNotEmpty(message.getName()) && autoReplyToUser!=null){
+			this.sendMsg(message.getFromUserName(), autoReplyToUser.getCustomMessage());
+		}else if(StringUtils.isNotEmpty(message.getName()) && auto_reply ){
 			autoReplyMessage = autoReplyTextRepository.findByWechatId(this.session().getUserName());
 	        this.sendMsg(message.getFromUserName(), "自动回复: " + autoReplyMessage.getMessage());
 	    } else if (StringUtils.isNotEmpty(message.getName())  && isChatWithTuring){
-			this.sendMsg(message.getFromUserName(), chatWithTuringRobot(message.getToUserName(),message.getText()));
+			this.sendMsg(message.getFromUserName(), chatWithTuringRobot(message.getFromUserName(),message.getText()));
 		}
 	}
 

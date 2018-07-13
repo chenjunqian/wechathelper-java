@@ -1,28 +1,41 @@
 package com.wechathelper.robot;
 
+import com.alibaba.fastjson.JSON;
+import com.wechathelper.WechathelperApplication;
 import com.wechathelper.model.AutoReplyMessage;
+import com.wechathelper.model.ChatMessage;
 import com.wechathelper.model.TextMessageTask;
+import com.wechathelper.model.User;
 import com.wechathelper.repository.AutoReplyTextRepository;
+import com.wechathelper.repository.ChatMessageRepository;
 import com.wechathelper.repository.TextMessageTaskRepository;
+import com.wechathelper.repository.UserRepository;
 import io.github.biezhi.wechat.WeChatBot;
 import io.github.biezhi.wechat.api.annotation.Bind;
 import io.github.biezhi.wechat.api.constant.Config;
 import io.github.biezhi.wechat.api.enums.AccountType;
 import io.github.biezhi.wechat.api.model.WeChatMessage;
 import io.github.biezhi.wechat.utils.StringUtils;
-import org.quartz.*;
-import org.quartz.impl.StdSchedulerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.*;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
 
-import java.util.List;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
-import static org.quartz.CronScheduleBuilder.cronSchedule;
-import static org.quartz.JobBuilder.newJob;
-import static org.quartz.TriggerBuilder.newTrigger;
 
-public class MyWechatBot extends WeChatBot implements Job {
+public class MyWechatBot extends WeChatBot{
 	
 	private boolean auto_reply = false;
+
+	private boolean isChatWithTuring = false;
+
+	@Autowired
+	private UserRepository userRepository;
 
 	@Autowired
 	private TextMessageTaskRepository textMessageTaskRepository;
@@ -30,12 +43,18 @@ public class MyWechatBot extends WeChatBot implements Job {
 	@Autowired
 	private AutoReplyTextRepository autoReplyTextRepository;
 
+	@Autowired
+	private ChatMessageRepository chatMessageRepository;
 
 	private AutoReplyMessage autoReplyMessage;
 
 	private TextMessageTask textMessageTask;
 
-
+	public MyWechatBot(Config config) {
+		super(config);
+		// TODO Auto-generated constructor stub
+		init();
+	}
 
 	public boolean isAuto_reply() {
 		return auto_reply;
@@ -46,65 +65,90 @@ public class MyWechatBot extends WeChatBot implements Job {
 		this.auto_reply = auto_reply;
 	}
 
+	public boolean isChatWithTuring() {
+		return isChatWithTuring;
+	}
 
-	public MyWechatBot(Config config) {
-		super(config);
-		// TODO Auto-generated constructor stub
+	public void setChatWithTuring(boolean chatWithTuring) {
+		isChatWithTuring = chatWithTuring;
+	}
+
+
+
+	private void init(){
+		User user = userRepository.findByUsername(this.session().getUserName());
+		setAuto_reply(user.isAutoReply());
+		setChatWithTuring(user.isChatWithTuring());
 		autoSendMessage();
 	}
 	
 	
 	@Bind(accountType = AccountType.TYPE_FRIEND)
 	public void friendMessage(WeChatMessage message) {
-	    if(StringUtils.isNotEmpty(message.getName())  && auto_reply){
+		ChatMessage chatMessage = new ChatMessage(
+				MyWechatBot.this.session().getUserName(),
+				message.getId(),
+				message.getText()
+		);
+		chatMessageRepository.save(chatMessage);
+
+	    if(StringUtils.isNotEmpty(message.getName())  && auto_reply ){
 			autoReplyMessage = autoReplyTextRepository.findByWechatId(this.session().getUserName());
 	        this.sendMsg(message.getFromUserName(), "自动回复: " + autoReplyMessage.getMessage());
-	    }
+	    } else if (StringUtils.isNotEmpty(message.getName())  && isChatWithTuring){
+			this.sendMsg(message.getFromUserName(), chatWithTuringRobot(message.getToUserName(),message.getText()));
+		}
 	}
 
 
+	/**
+	 * 自动定时发送消息
+	 */
 	public void autoSendMessage(){
-		try {
 
-			List<TextMessageTask> listMessageTask = textMessageTaskRepository.findAllByWechatId(this.session().getUserName());
-			if (listMessageTask.size() <= 0) return;
-
-			SchedulerFactory schedulerFactory = new StdSchedulerFactory();
-			Scheduler scheduler = schedulerFactory.getScheduler();
-
-			for (TextMessageTask textMessageTask : listMessageTask){
-				JobDetail job = newJob(MyWechatBot.class)
-						.withIdentity("AutoSendMessage", "MyWechatBot")
-						.build();
-
-				String triggerTask = getDayTrigger(textMessageTask.getTaskTimeMinute(),textMessageTask.getTaskTimeHour());
-				Trigger trigger = newTrigger()
-						.withIdentity("AutoSendMessageTrigger", "MyWechatBot")
-						.withSchedule(cronSchedule(triggerTask))//"0 0/3 17-23 * * ?"
-						.build();
-
-				scheduler.scheduleJob(job, trigger);
+		WechathelperApplication.getScheduledExecutorService().scheduleAtFixedRate(new Runnable() {
+			@Override
+			public void run() {
+				int minute = LocalDateTime.now().getMinute();
+				int hour = LocalDateTime.now().getHour();
+				textMessageTask = textMessageTaskRepository.findByTaskTimeHourAndTaskTimeHour(minute,hour);
+				if (textMessageTask!=null){
+					MyWechatBot.this.sendMsg(
+							textMessageTask.getToUsername(),
+							textMessageTask.getMessage()
+					);
+				}
 			}
-
-			scheduler.start();
-		} catch (SchedulerException e) {
-			e.printStackTrace();
-		}
+		},0, 10,TimeUnit.SECONDS);
 
 	}
 
 	/**
-	 *  拼接成quartz的trigger任务
-	 *  例如 0 0/30 20-23 ? * MON-WED,SAT
-	 *  每周一，周二，周三，周六的晚上 20:00 到 23:00，每半小时执行一次的 CronTrigger
-	 * */
-	private String getDayTrigger(int minute, int hour){
+	 *
+	 * @param userId
+	 * @param massage
+	 * @return String 机器人回复的消息
+	 * 与图灵机器人聊天
+	 */
+	private String chatWithTuringRobot(String userId, String massage){
+		String apiKey = "3b55c27711f04c1a9cbef28e9d43da88";
+		String turingUrl = "http://www.tuling123.com/openapi/api"+"?key="+apiKey+"&info="+massage;
+		RestTemplate restTemplate = new RestTemplate();
+		HttpHeaders httpHeaders = new HttpHeaders();
+		httpHeaders.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+		MultiValueMap<String, String> params= new LinkedMultiValueMap<>();
+		params.add("key",apiKey);
+		params.add("info",massage);
+		params.add("loc","桂林");
+		params.add("userid","@WSXZAQ!");
+		HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<MultiValueMap<String, String>>(params, httpHeaders);
+		ResponseEntity<String> response = restTemplate.exchange(turingUrl,HttpMethod.GET,null,String.class);
 
-		return String.format("0 %d %d * * ?",minute,hour);
+		Map<String,String> responseMap = (Map<String, String>) JSON.parse(response.getBody());
+		String responseText = responseMap.get("text");
+
+		return responseText;
 	}
 
-	@Override
-	public void execute(JobExecutionContext jobExecutionContext) throws JobExecutionException {
 
-	}
 }

@@ -36,8 +36,8 @@ public class WechatService {
 		return qRCodePath;
 	}
 	
-	public MyWechatBot getRobotByUsername (String username) {
-		MyWechatBot bot = wechatMap.get(username);
+	public MyWechatBot getRobotByWechatId(String wechatId) {
+		MyWechatBot bot = wechatMap.get(wechatId);
 		return bot;
 	}
 	

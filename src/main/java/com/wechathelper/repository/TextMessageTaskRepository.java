@@ -8,4 +8,6 @@ import java.util.List;
 public interface TextMessageTaskRepository extends JpaRepository<TextMessageTask, Long> {
 
     List<TextMessageTask> findAllByWechatId(String wechatId);
+
+    TextMessageTask findByTaskTimeHourAndTaskTimeHour(int minute, int hour);
 }

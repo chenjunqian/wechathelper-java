@@ -12,6 +12,7 @@ import com.wechathelper.WechathelperApplication;
 import com.wechathelper.constant.ErrorCode;
 import com.wechathelper.model.*;
 import com.wechathelper.repository.AutoReplyTextRepository;
+import com.wechathelper.repository.AutoReplyToUserRepository;
 import com.wechathelper.repository.TextMessageTaskRepository;
 import com.wechathelper.repository.UserRepository;
 import com.wechathelper.security.JwtTokenUtil;
@@ -52,6 +53,9 @@ public class WeChatHelperController {
 
 	@Autowired
 	private AutoReplyTextRepository autoReplyTextRepository;
+
+	@Autowired
+	private AutoReplyToUserRepository autoReplyToUserRepository;
 
 	@Autowired
 	private AuthenticationManager authenticationManager;
@@ -125,7 +129,8 @@ public class WeChatHelperController {
 	@GetMapping(value="/status")
 	public ResponseEntity<?> wechatStatus(@RequestParam("username") String username) {
 		if (WechathelperApplication.getWechatService().getWechatMap().containsKey(username)) {
-			return new ResponseEntity<Integer>(1,HttpStatus.OK);
+			User user = userRepository.findByUsername(username);
+			return new ResponseEntity<User>(user,HttpStatus.OK);
 		}
 
 		return new ResponseEntity<Integer>(1, HttpStatus.NO_CONTENT);
@@ -160,7 +165,7 @@ public class WeChatHelperController {
 	}
 
 	@PreAuthorize("hasRole('USER')")
-	@PostMapping(value = "/auto_reply_text-message")
+	@PostMapping(value = "/auto-reply-text-message")
 	public ResponseEntity<?> updateAutoReplyTestMessage(@Validated AutoReplyMessage autoReplyMessega){
 		AutoReplyMessage check = autoReplyTextRepository.findByWechatId(autoReplyMessega.getWechatId());
 
@@ -171,6 +176,37 @@ public class WeChatHelperController {
 
 		autoReplyTextRepository.save(autoReplyMessega);
 		return  new ResponseEntity<AutoReplyMessage>(autoReplyMessega,HttpStatus.OK);
+	}
+
+	@PreAuthorize("hasRole('USER')")
+	@PostMapping(value = "/user_profile")
+	public ResponseEntity<?> updateUserProfile(@Validated User user){
+		userRepository.save(user);
+		return new ResponseEntity<User>(user,HttpStatus.OK);
+	}
+
+	@PreAuthorize("hasRole('USER')")
+	@PostMapping(value = "/auto-reply-custom-message")
+	public ResponseEntity<?> updateAutoReplyCustomMessage(@RequestParam(value = "wechat_id") String wechatId,
+														  @RequestParam(value = "custom_message") String message,
+														  @RequestParam(value = "reply_to_wechat_id") String toWechatId){
+
+			AutoReplyToUser autoReplyToUserCheck = autoReplyToUserRepository.findByWechatIdAndAndReplyToWechatId(wechatId,toWechatId);
+			if (autoReplyToUserCheck==null){
+				AutoReplyToUser autoReplyToUser = new AutoReplyToUser(
+					toWechatId,wechatId,true,false,message
+				);
+
+				autoReplyToUserRepository.save(autoReplyToUser);
+				WechathelperApplication.getWechatService().getRobotByWechatId(wechatId).setChatWithTuring(false);
+				return new ResponseEntity<>(autoReplyToUser,HttpStatus.OK);
+			}else{
+				autoReplyToUserCheck.setCustomMessage(message);
+				autoReplyToUserRepository.save(autoReplyToUserCheck);
+				WechathelperApplication.getWechatService().getRobotByWechatId(wechatId).setChatWithTuring(false);
+				return new ResponseEntity<>(autoReplyToUserCheck,HttpStatus.OK);
+			}
+
 	}
 
 }

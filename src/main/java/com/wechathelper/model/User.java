@@ -28,18 +28,25 @@ public class User extends BaseEntity{
     @Column(name = "is_need_service")
     private boolean isNeedService;
 
+    @Column(name = "is_auto_reply")
+    private boolean isAutoReply;
+
+    @Column(name = "is_chat_with_turing")
+    private boolean isChatWithTuring;
+
     @OneToMany(cascade = CascadeType.ALL)
     private Set<Role> roles;
 
     protected User(){}
 
-    public User(java.lang.String username, java.lang.String wechatId, java.lang.String city, boolean isGetWeather, boolean isNeedService){
+    public User(String username, String wechatId, String city, boolean isGetWeather, boolean isNeedService){
         this.username = username;
         this.wechatId = wechatId;
         this.city = city;
         this.isGetWeather = isGetWeather;
         this.isNeedService = isNeedService;
     }
+
 
     public java.lang.String getUsername() {
         return username;
@@ -81,6 +88,14 @@ public class User extends BaseEntity{
         isNeedService = needService;
     }
 
+    public boolean isAutoReply() {
+        return isAutoReply;
+    }
+
+    public void setAutoReply(boolean autoReply) {
+        isAutoReply = autoReply;
+    }
+
     public java.lang.String getPassword() {
         return password;
     }
@@ -95,5 +110,13 @@ public class User extends BaseEntity{
 
     public void setRoles(Set<Role> roles) {
         this.roles = roles;
+    }
+
+    public boolean isChatWithTuring() {
+        return isChatWithTuring;
+    }
+
+    public void setChatWithTuring(boolean chatWithTuring) {
+        isChatWithTuring = chatWithTuring;
     }
 }
